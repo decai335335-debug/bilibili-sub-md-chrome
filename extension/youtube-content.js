@@ -336,6 +336,31 @@
       }
     }
 
+    // Fallback: baseUrl 签名可能已过期，用最简参数构造 URL 重试
+    try {
+      const lang = extractLangFromUrl(url);
+      if (state.videoId && lang) {
+        const simpleUrl = `https://www.youtube.com/api/timedtext?v=${encodeURIComponent(state.videoId)}&lang=${encodeURIComponent(lang)}&fmt=srv3`;
+        console.log(`[YTC] fallback simple URL:`, simpleUrl);
+        const resp = await fetch(simpleUrl, { credentials: "include", headers: { Accept: "*/*" } });
+        if (resp.ok) {
+          const text = await resp.text();
+          console.log(`[YTC] fallback response length=${text.length}`);
+          try {
+            const json = JSON.parse(text);
+            if (json.events || json.pens) {
+              const body = parseSrv3Json(json);
+              if (body.length > 0) return body;
+            }
+          } catch { /* not JSON */ }
+          const body = parseXmlSubtitle(text);
+          if (body.length > 0) return body;
+        }
+      }
+    } catch (e) {
+      console.warn("[YTC] fallback failed:", getErrorMessage(e));
+    }
+
     throw new Error("所有格式均未解析出字幕内容");
   }
 
@@ -343,6 +368,15 @@
     const url = new URL(baseUrl);
     url.searchParams.set("fmt", fmt);
     return url.toString();
+  }
+
+  function extractLangFromUrl(urlStr) {
+    try {
+      const u = new URL(urlStr);
+      return u.searchParams.get("lang") || "";
+    } catch {
+      return "";
+    }
   }
 
   function parseSrv3Json(data) {
