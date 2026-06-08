@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bilibili 批量字幕下载</title>
+  <link rel="stylesheet" href="batch.css">
+</head>
+<body>
+  <div class="batch-container">
+    <header class="batch-header">
+      <h1>Bilibili 批量字幕下载</h1>
+      <button id="closeBtn" type="button" title="关闭">✕</button>
+    </header>
+
+    <div class="batch-toolbar">
+      <button id="scanBtn" type="button">🔄 扫描标签页</button>
+      <button id="selectAllABtn" type="button">全部选 A（单P）</button>
+      <button id="selectAllBBtn" type="button">全部选 B（全P）</button>
+      <button id="startBtn" type="button" class="primary">▶ 开始下载</button>
+    </div>
+
+    <div class="batch-settings-row">
+      <label>
+        <input type="checkbox" id="autoSelectB" />
+        多P视频自动选 B（下载全部分P）
+      </label>
+      <label>
+        输出格式：
+        <select id="formatSelect">
+          <option value="md">Markdown</option>
+          <option value="srt">SRT</option>
+          <option value="txt">TXT</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="status" class="batch-status">请点击"扫描标签页"获取当前打开的 B 站视频。</div>
+    <div id="progress" class="batch-progress" style="display:none;">
+      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      <span id="progressText">0 / 0</span>
+    </div>
+
+    <div id="videoList" class="video-list">
+      <!-- 动态生成 -->
+    </div>
+
+    <div id="resultSummary" class="result-summary" style="display:none;"></div>
+  </div>
+
+  <script src="batch.js"></script>
+</body>
+</html>
