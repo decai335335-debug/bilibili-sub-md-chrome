@@ -94,14 +94,16 @@ async function scanTabs() {
         const allTabsFromWindows = windows.flatMap(w => w.tabs || []);
         console.log("[YTBatch] windows.getAll tabs:", allTabsFromWindows.length, allTabsFromWindows.map(t => t.url));
 
-        tabs = allTabsFromWindows.filter(tab => {
-          const url = tab.url || "";
-          return url.includes("youtube.com/watch") ||
-                 url.includes("youtube.com/shorts") ||
-                 url.includes("youtube.com/live") ||
-                 url.includes("youtube.com/embed") ||
-                 url.includes("youtu.be/");
-        });
+        tabs = allTabsFromWindows
+          .filter(tab => {
+            const url = tab.url || "";
+            return url.includes("youtube.com/watch") ||
+                   url.includes("youtube.com/shorts") ||
+                   url.includes("youtube.com/live") ||
+                   url.includes("youtube.com/embed") ||
+                   url.includes("youtu.be/");
+          })
+          .map(tab => ({ tabId: tab.id, url: tab.url }));
         console.log("[YTBatch] windows filter result:", tabs.length, tabs.map(t => t.url));
       } catch (e) {
         console.warn("[YTBatch] windows.getAll failed:", e);
@@ -112,14 +114,16 @@ async function scanTabs() {
     if (tabs.length === 0) {
       try {
         const allTabs = await chrome.tabs.query({});
-        tabs = allTabs.filter(tab => {
-          const url = tab.url || "";
-          return url.includes("youtube.com/watch") ||
-                 url.includes("youtube.com/shorts") ||
-                 url.includes("youtube.com/live") ||
-                 url.includes("youtube.com/embed") ||
-                 url.includes("youtu.be/");
-        });
+        tabs = allTabs
+          .filter(tab => {
+            const url = tab.url || "";
+            return url.includes("youtube.com/watch") ||
+                   url.includes("youtube.com/shorts") ||
+                   url.includes("youtube.com/live") ||
+                   url.includes("youtube.com/embed") ||
+                   url.includes("youtu.be/");
+          })
+          .map(tab => ({ tabId: tab.id, url: tab.url }));
         console.log("[YTBatch] tabs.query fallback result:", tabs.length, tabs.map(t => t.url));
       } catch (e) {
         console.warn("[YTBatch] tabs.query fallback failed:", e);
@@ -136,9 +140,9 @@ async function scanTabs() {
     const seen = new Map();
     for (const tab of tabs) {
       const videoId = extractVideoId(tab.url);
-      console.log("[YTBatch] extract videoId from", tab.url, "=>", videoId);
+      console.log("[YTBatch] extract videoId from", tab.url, "tabId=", tab.tabId, "=>", videoId);
       if (videoId && !seen.has(videoId)) {
-        seen.set(videoId, { tabId: tab.id, url: tab.url, videoId });
+        seen.set(videoId, { tabId: tab.tabId, url: tab.url, videoId });
       }
     }
 
@@ -154,6 +158,8 @@ async function scanTabs() {
         console.warn(`[YTBatch] fetch failed for ${v.videoId}`, error);
         v.title = `【获取失败】${v.videoId}`;
         v.error = getErrorMessage(error);
+        v.tracks = [];
+        v.trackCount = 0;
       }
       setStatus(`正在获取字幕信息... (${i + 1} / ${uniqueVideos.length})`);
       await sleep(300);
@@ -179,18 +185,32 @@ async function fetchAndEnrichVideo(video) {
   // 先确保 content script 已注入
   try {
     await ensureContentScriptReady(video.tabId);
-    await sleep(200);
+    await sleep(1000); // 给 content script 足够时间初始化 + 轮询获取数据
   } catch (e) {
     console.warn("[YTBatch] inject content script failed", e);
   }
 
-  // 获取视频信息
-  const resp = await sendMessageToTab(video.tabId, { type: "ytc-get-info" });
-  if (!resp?.ok) {
-    throw new Error(resp?.error || "无法获取视频信息");
+  // 获取视频信息（带重试）
+  let resp = null;
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`[YTBatch] fetching info for ${video.videoId}, attempt ${attempt}`);
+      resp = await sendMessageToTab(video.tabId, { type: "ytc-get-info" });
+      if (resp?.ok) break;
+      lastError = resp?.error || "响应未 ok";
+    } catch (e) {
+      lastError = getErrorMessage(e);
+      console.warn(`[YTBatch] attempt ${attempt} failed for ${video.videoId}:`, lastError);
+    }
+    if (attempt < 3) await sleep(800);
   }
 
-  const data = resp.data;
+  if (!resp?.ok) {
+    throw new Error(lastError || "无法获取视频信息");
+  }
+
+  const data = resp.data || {};
   video.title = data.title || "";
   video.channel = data.channel || "";
   video.duration = data.duration || 0;
@@ -452,7 +472,8 @@ function renderVideoList() {
   }
 
   container.innerHTML = state.videos.map(v => {
-    const trackOptions = v.tracks.map((t, idx) => {
+    const tracks = v.tracks || [];
+    const trackOptions = tracks.map((t, idx) => {
       const selected = v.selectedTrackIndex === idx ? "selected" : "";
       const kindLabel = t.kind === "asr" ? " [AI]" : "";
       return `<option value="${idx}" ${selected}>${escapeHtml(t.name || t.languageCode)}${kindLabel}</option>`;
