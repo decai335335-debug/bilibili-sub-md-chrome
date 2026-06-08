@@ -393,14 +393,13 @@ async function downloadOneVideo(video, format) {
 
 function downloadToFile(filepath, content) {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    // 使用 data URL，不需要 blob/release，Chrome 下载更稳定
+    const dataUrl = "data:text/plain;charset=utf-8," + encodeURIComponent(content);
     chrome.downloads.download({
-      url: url,
+      url: dataUrl,
       filename: filepath,
       saveAs: false
     }, (downloadId) => {
-      URL.revokeObjectURL(url);
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
         return;
