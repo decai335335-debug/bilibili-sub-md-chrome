@@ -245,4 +245,4 @@ A: 不可以。批量下载页面需要保持打开，且被下载的视频标�
 - 🔧 manifest.json 新增 `tabs` 权限（用于扫描标签页）
 
 ### v1.0.17
-- 原 [Bilibili Obsidian Clipper](https://github.com/haixiong1997/Bilibili-Obsidian-Clipper) 基础功能：单视频字幕抓取、Markdown/SRT/TXT 导出、Obsidian Local REST API 保存
+- 原 [Bilibili Obsidian Clipper](https://github.com/decai335335-debug/bilibili-sub-md-chrome) 基础功能：单视频字幕抓取、Markdown/SRT/TXT 导出、Obsidian Local REST API 保存

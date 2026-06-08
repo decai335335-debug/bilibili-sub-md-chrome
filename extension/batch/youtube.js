@@ -57,29 +57,58 @@ async function scanTabs() {
   hideResultSummary();
 
   try {
-    // ===== 方式 1：chrome.windows.getAll({ populate: true }) =====
-    // 这个 API 会返回所有窗口及其标签页的完整信息，包括 URL
-    // 不受 Chrome 休眠标签页/预渲染影响，比 tabs.query 更可靠
+    // ===== 方式 1：Content Script 主动上报（最可靠）=====
+    // YouTube content script 在页面加载时会自动向 background.js 注册自己
+    // 完全绕过 tabs.query / windows.getAll 的兼容性问题
     let tabs = [];
     try {
-      const windows = await chrome.windows.getAll({ populate: true });
-      const allTabsFromWindows = windows.flatMap(w => w.tabs || []);
-      console.log("[YTBatch] windows.getAll tabs:", allTabsFromWindows.length, allTabsFromWindows.map(t => t.url));
-
-      tabs = allTabsFromWindows.filter(tab => {
-        const url = tab.url || "";
-        return url.includes("youtube.com/watch") ||
-               url.includes("youtube.com/shorts") ||
-               url.includes("youtube.com/live") ||
-               url.includes("youtube.com/embed") ||
-               url.includes("youtu.be/");
-      });
-      console.log("[YTBatch] windows filter result:", tabs.length, tabs.map(t => t.url));
+      const resp = await sendRuntimeMessage({ type: "yt-get-registered-tabs" });
+      console.log("[YTBatch] registered tabs response:", resp);
+      if (resp?.ok && resp.tabs) {
+        const registered = Object.entries(resp.tabs).map(([tabId, data]) => ({
+          tabId: Number(tabId),
+          url: data.url,
+          title: data.title
+        }));
+        // 验证这些标签页是否还存在
+        for (const item of registered) {
+          try {
+            const tab = await chrome.tabs.get(item.tabId);
+            if (tab && !tab.discarded) {
+              tabs.push({ tabId: item.tabId, url: item.url });
+            }
+          } catch (e) {
+            // 标签页已关闭，忽略
+          }
+        }
+        console.log("[YTBatch] registered tabs after validation:", tabs.length, tabs.map(t => t.url));
+      }
     } catch (e) {
-      console.warn("[YTBatch] windows.getAll failed:", e);
+      console.warn("[YTBatch] registered tabs failed:", e);
     }
 
-    // ===== 方式 2：回退到 tabs.query（备用） =====
+    // ===== 方式 2：chrome.windows.getAll（备用）=====
+    if (tabs.length === 0) {
+      try {
+        const windows = await chrome.windows.getAll({ populate: true });
+        const allTabsFromWindows = windows.flatMap(w => w.tabs || []);
+        console.log("[YTBatch] windows.getAll tabs:", allTabsFromWindows.length, allTabsFromWindows.map(t => t.url));
+
+        tabs = allTabsFromWindows.filter(tab => {
+          const url = tab.url || "";
+          return url.includes("youtube.com/watch") ||
+                 url.includes("youtube.com/shorts") ||
+                 url.includes("youtube.com/live") ||
+                 url.includes("youtube.com/embed") ||
+                 url.includes("youtu.be/");
+        });
+        console.log("[YTBatch] windows filter result:", tabs.length, tabs.map(t => t.url));
+      } catch (e) {
+        console.warn("[YTBatch] windows.getAll failed:", e);
+      }
+    }
+
+    // ===== 方式 3：tabs.query（最后备用）=====
     if (tabs.length === 0) {
       try {
         const allTabs = await chrome.tabs.query({});
@@ -98,7 +127,7 @@ async function scanTabs() {
     }
 
     if (tabs.length === 0) {
-      setStatus("未找到打开的 YouTube 视频标签页。请确认视频页已完全加载，然后重新扫描。");
+      setStatus("未找到 YouTube 视频。请确认：1) 视频页已完全加载 2) 扩展已刷新 3) 刷新 YouTube 页面后重试。");
       renderVideoList();
       return;
     }

@@ -8,7 +8,7 @@
 
 用户（项目作者）的日常工作流：在 B 站和 YouTube 学习技术教程时，会同时打开 10-20 个视频标签页。看完一批后，想把所有视频的字幕保存到 Obsidian 做二次笔记（标注、整理、建立知识链接）。
 
-原有工具 [Bilibili Obsidian Clipper](https://github.com/haixiong1997/Bilibili-Obsidian-Clipper) 只能**单个视频**操作：打开视频页 → 点击扩展图标 → 抓取字幕 → 保存到 Obsidian。当视频数量超过 5 个时，这个流程的重复劳动成本急剧上升。
+原有工具 [Bilibili Obsidian Clipper](https://github.com/decai335335-debug/bilibili-sub-md-chrome) 只能**单个视频**操作：打开视频页 → 点击扩展图标 → 抓取字幕 → 保存到 Obsidian。当视频数量超过 5 个时，这个流程的重复劳动成本急剧上升。
 
 同时，用户还有两个 Python CLI 项目：
 - `bilibili-sub-md`：支持批量下载 B 站字幕到本地文件夹
@@ -40,7 +40,7 @@
 
 ### Phase 0：基础依赖（原项目）
 
-**2024-Q4** —— 使用 [Bilibili Obsidian Clipper](https://github.com/haixiong1997/Bilibili-Obsidian-Clipper) v1.0.17
+**2024-Q4** —— 使用 [Bilibili Obsidian Clipper](https://github.com/decai335335-debug/bilibili-sub-md-chrome) v1.0.17
 
 已有能力：
 - B 站单视频页字幕抓取（content.js 注入页面）

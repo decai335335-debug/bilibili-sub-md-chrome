@@ -193,7 +193,80 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  // ===== YouTube 标签页注册（绕过 tabs.query 兼容性问题）=====
+  if (message.type === "yt-register-tab") {
+    const tabId = _sender?.tab?.id;
+    const url = message.url || _sender?.tab?.url || "";
+    const title = message.title || _sender?.tab?.title || "";
+    if (tabId && url) {
+      chrome.storage.local.get("yt_registered_tabs")
+        .then(result => {
+          const tabs = result.yt_registered_tabs || {};
+          tabs[String(tabId)] = { url, title, timestamp: Date.now() };
+          return chrome.storage.local.set({ yt_registered_tabs: tabs });
+        })
+        .then(() => sendResponse({ ok: true }))
+        .catch(error => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+    sendResponse({ ok: false, error: "Missing tabId or url" });
+    return false;
+  }
+
+  if (message.type === "yt-unregister-tab") {
+    const tabId = _sender?.tab?.id || message.tabId;
+    if (tabId) {
+      chrome.storage.local.get("yt_registered_tabs")
+        .then(result => {
+          const tabs = result.yt_registered_tabs || {};
+          delete tabs[String(tabId)];
+          return chrome.storage.local.set({ yt_registered_tabs: tabs });
+        })
+        .then(() => sendResponse({ ok: true }))
+        .catch(error => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+    sendResponse({ ok: false, error: "Missing tabId" });
+    return false;
+  }
+
+  if (message.type === "yt-get-registered-tabs") {
+    chrome.storage.local.get("yt_registered_tabs")
+      .then(result => {
+        const tabs = result.yt_registered_tabs || {};
+        // 清理超过 30 分钟的过期记录
+        const now = Date.now();
+        const MAX_AGE = 30 * 60 * 1000;
+        let hasExpired = false;
+        for (const [key, value] of Object.entries(tabs)) {
+          if (!value.timestamp || (now - value.timestamp) > MAX_AGE) {
+            delete tabs[key];
+            hasExpired = true;
+          }
+        }
+        if (hasExpired) {
+          chrome.storage.local.set({ yt_registered_tabs: tabs });
+        }
+        sendResponse({ ok: true, tabs });
+      })
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   return false;
+});
+
+// 监听标签页关闭，自动清理已注册的 YouTube 标签页
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.local.get("yt_registered_tabs")
+    .then(result => {
+      const tabs = result.yt_registered_tabs || {};
+      if (tabs[String(tabId)]) {
+        delete tabs[String(tabId)];
+        return chrome.storage.local.set({ yt_registered_tabs: tabs });
+      }
+    })
+    .catch(() => {});
 });
 
 async function initializeSettingsStorage() {

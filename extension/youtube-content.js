@@ -21,7 +21,39 @@
   function init() {
     extractPageData();
     bindRuntimeEvents();
+    registerTab();
     console.info(`[YTC] YouTube content script loaded, version=${YTC_VERSION}`);
+  }
+
+  function registerTab() {
+    try {
+      chrome.runtime.sendMessage({
+        type: "yt-register-tab",
+        tabId: -1, // background.js 会通过 sender.tab.id 获取
+        url: location.href,
+        title: document.title
+      }, (resp) => {
+        if (chrome.runtime.lastError) {
+          console.warn("[YTC] register tab failed:", chrome.runtime.lastError.message);
+          return;
+        }
+        console.info("[YTC] tab registered:", resp);
+      });
+    } catch (e) {
+      console.warn("[YTC] register tab exception:", e);
+    }
+
+    // 页面卸载时注销
+    window.addEventListener("beforeunload", () => {
+      try {
+        chrome.runtime.sendMessage({
+          type: "yt-unregister-tab",
+          tabId: -1
+        });
+      } catch (e) {
+        // ignore
+      }
+    });
   }
 
   function extractPageData() {
