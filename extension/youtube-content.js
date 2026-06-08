@@ -200,9 +200,12 @@
         if (missingUrl.length > 0) {
           console.warn("[YTC] tracks missing baseUrl:", missingUrl.length, "of", state.captionTracks.length);
         }
+        // 默认语言：第一个 caption track 的语言（通常是视频原语言）
+        state.defaultLanguage = state.captionTracks[0]?.languageCode || "";
       } else {
         state.captionTracks = [];
         state.translationLanguages = [];
+        state.defaultLanguage = "";
       }
 
       state.extracted = true;
@@ -247,6 +250,7 @@
             duration: state.duration,
             url: location.href,
             trackCount: state.captionTracks.length,
+            defaultLanguage: state.defaultLanguage,
             tracks: state.captionTracks.map(t => ({
               baseUrl: t.baseUrl,
               name: t.name,
@@ -327,11 +331,31 @@
   function parseXmlSubtitle(xmlText) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlText, "text/xml");
-    const texts = doc.querySelectorAll("text");
+
+    // YouTube XML 字幕用 <p> 标签（t=开始时间ms, d=持续时间ms）
+    // 旧版 API 用 <text> 标签（start=秒, dur=秒）
+    let nodes = doc.querySelectorAll("p");
+    if (nodes.length === 0) {
+      nodes = doc.querySelectorAll("text");
+    }
+
     const body = [];
-    for (const node of texts) {
-      const start = Number(node.getAttribute("start") || 0);
-      const dur = Number(node.getAttribute("dur") || 5);
+    for (const node of nodes) {
+      // <p t="1000" d="3000"> 或 <text start="1.0" dur="5">
+      const tMs = node.getAttribute("t");
+      const dMs = node.getAttribute("d");
+      const startSec = node.getAttribute("start");
+      const durSec = node.getAttribute("dur");
+
+      let start, dur;
+      if (tMs !== null) {
+        start = Number(tMs) / 1000;
+        dur = Number(dMs || 5000) / 1000;
+      } else {
+        start = Number(startSec || 0);
+        dur = Number(durSec || 5);
+      }
+
       let content = "";
       for (const child of node.childNodes) {
         content += child.textContent || "";

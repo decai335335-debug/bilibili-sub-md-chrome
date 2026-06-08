@@ -218,6 +218,7 @@ async function fetchAndEnrichVideo(video) {
   video.duration = data.duration || 0;
   video.trackCount = data.trackCount || 0;
   video.tracks = data.tracks || [];
+  video.defaultLanguage = data.defaultLanguage || "";
 }
 
 async function ensureContentScriptReady(tabId) {
@@ -241,7 +242,9 @@ function autoSelectTracks() {
   for (const v of state.videos) {
     if (!v.tracks || v.tracks.length === 0) continue;
 
-    const track = pickBestTrack(v.tracks, preferredLang, preferManual);
+    // 如果用户选了"自动"，使用视频本身的默认语言
+    const lang = preferredLang || v.defaultLanguage || "";
+    const track = pickBestTrack(v.tracks, lang, preferManual);
     if (track) {
       v.selectedTrackIndex = v.tracks.findIndex(t =>
         t.languageCode === track.languageCode && t.baseUrl === track.baseUrl
@@ -264,7 +267,7 @@ function pickBestTrack(tracks, preferredLang, preferManual) {
     if (manual.length > 0) candidates = manual;
   }
 
-  // 2. 语言匹配
+  // 2. 语言匹配：优先用户指定/视频默认语言
   if (preferredLang) {
     const exact = candidates.filter(t => t.languageCode === preferredLang);
     if (exact.length > 0) candidates = exact;
@@ -272,19 +275,9 @@ function pickBestTrack(tracks, preferredLang, preferManual) {
       const prefix = candidates.filter(t => t.languageCode.startsWith(preferredLang));
       if (prefix.length > 0) candidates = prefix;
     }
-  } else {
-    // 没有指定语言时，优先中文 > 英文 > 其他
-    const priority = ["zh", "zh-Hans", "zh-CN", "zh-TW", "en", "en-US", "en-GB", "ja", "ko"];
-    for (const lang of priority) {
-      const match = candidates.filter(t => t.languageCode === lang || t.languageCode.startsWith(lang));
-      if (match.length > 0) {
-        candidates = match;
-        break;
-      }
-    }
   }
 
-  // 3. 优先手动字幕（在已过滤的候选中）
+  // 3. 在已过滤的候选中，再次优先手动字幕
   const manualFirst = candidates.filter(t => t.kind !== "asr");
   if (manualFirst.length > 0) candidates = manualFirst;
 
