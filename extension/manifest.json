@@ -1,21 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "Bilibili Obsidian Clipper｜一键保存B站字幕",
-  "version": "1.0.17",
-  "description": "在 B 站视频页抓取字幕，预览后一键保存到 Obsidian。",
-  
+  "name": "Video Subtitle Clipper｜B站 & YouTube 字幕批量下载",
+  "version": "1.2.0",
+  "description": "在 Bilibili 和 YouTube 视频页抓取字幕，支持批量扫描标签页、A/B 选择，一键保存到 Obsidian。",
+
   "browser_specific_settings": {
     "gecko": {
-      "id": "bilibili-obsidian-clipper@github.com",
+      "id": "video-subtitle-clipper@github.com",
       "strict_min_version": "109.0"
     }
   },
-  
+
   "permissions": ["storage", "scripting", "tabs"],
   "host_permissions": [
     "https://www.bilibili.com/*",
     "https://api.bilibili.com/*",
     "https://*.hdslb.com/*",
+    "https://www.youtube.com/*",
+    "https://youtu.be/*",
     "http://127.0.0.1/*",
     "https://127.0.0.1/*",
     "http://localhost/*",
@@ -41,10 +43,20 @@
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/watch*",
+        "https://www.youtube.com/shorts/*",
+        "https://www.youtube.com/live/*",
+        "https://www.youtube.com/embed/*"
+      ],
+      "js": ["youtube-content.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
-    "default_title": "Bilibili Obsidian Clipper",
+    "default_title": "Video Subtitle Clipper",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
