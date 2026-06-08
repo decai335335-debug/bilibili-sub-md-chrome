@@ -57,78 +57,75 @@ async function scanTabs() {
   hideResultSummary();
 
   try {
-    // ===== 方式 1：Content Script 主动上报（最可靠）=====
-    // YouTube content script 在页面加载时会自动向 background.js 注册自己
-    // 完全绕过 tabs.query / windows.getAll 的兼容性问题
-    let tabs = [];
+    // ===== 合并三种来源获取所有 YouTube 标签页 =====
+    const allTabs = new Map(); // tabId -> {tabId, url}
+
+    // 方式 1：Content Script 主动上报
     try {
       const resp = await sendRuntimeMessage({ type: "yt-get-registered-tabs" });
       console.log("[YTBatch] registered tabs response:", resp);
       if (resp?.ok && resp.tabs) {
-        const registered = Object.entries(resp.tabs).map(([tabId, data]) => ({
-          tabId: Number(tabId),
-          url: data.url,
-          title: data.title
-        }));
-        // 验证这些标签页是否还存在
-        for (const item of registered) {
+        for (const [tabIdStr, data] of Object.entries(resp.tabs)) {
+          const tabId = Number(tabIdStr);
           try {
-            const tab = await chrome.tabs.get(item.tabId);
+            const tab = await chrome.tabs.get(tabId);
             if (tab && !tab.discarded) {
-              tabs.push({ tabId: item.tabId, url: item.url });
+              allTabs.set(tabId, { tabId, url: data.url });
             }
           } catch (e) {
             // 标签页已关闭，忽略
           }
         }
-        console.log("[YTBatch] registered tabs after validation:", tabs.length, tabs.map(t => t.url));
       }
     } catch (e) {
       console.warn("[YTBatch] registered tabs failed:", e);
     }
+    console.log("[YTBatch] after registered:", allTabs.size);
 
-    // ===== 方式 2：chrome.windows.getAll（备用）=====
-    if (tabs.length === 0) {
-      try {
-        const windows = await chrome.windows.getAll({ populate: true });
-        const allTabsFromWindows = windows.flatMap(w => w.tabs || []);
-        console.log("[YTBatch] windows.getAll tabs:", allTabsFromWindows.length, allTabsFromWindows.map(t => t.url));
+    // 方式 2：chrome.windows.getAll
+    try {
+      const windows = await chrome.windows.getAll({ populate: true });
+      const allTabsFromWindows = windows.flatMap(w => w.tabs || []);
+      console.log("[YTBatch] windows.getAll total tabs:", allTabsFromWindows.length);
 
-        tabs = allTabsFromWindows
-          .filter(tab => {
-            const url = tab.url || "";
-            return url.includes("youtube.com/watch") ||
-                   url.includes("youtube.com/shorts") ||
-                   url.includes("youtube.com/live") ||
-                   url.includes("youtube.com/embed") ||
-                   url.includes("youtu.be/");
-          })
-          .map(tab => ({ tabId: tab.id, url: tab.url }));
-        console.log("[YTBatch] windows filter result:", tabs.length, tabs.map(t => t.url));
-      } catch (e) {
-        console.warn("[YTBatch] windows.getAll failed:", e);
+      for (const tab of allTabsFromWindows) {
+        const url = tab.url || "";
+        if (url.includes("youtube.com/watch") ||
+            url.includes("youtube.com/shorts") ||
+            url.includes("youtube.com/live") ||
+            url.includes("youtube.com/embed") ||
+            url.includes("youtu.be/")) {
+          if (!allTabs.has(tab.id)) {
+            allTabs.set(tab.id, { tabId: tab.id, url: tab.url });
+          }
+        }
       }
+    } catch (e) {
+      console.warn("[YTBatch] windows.getAll failed:", e);
     }
+    console.log("[YTBatch] after windows:", allTabs.size);
 
-    // ===== 方式 3：tabs.query（最后备用）=====
-    if (tabs.length === 0) {
-      try {
-        const allTabs = await chrome.tabs.query({});
-        tabs = allTabs
-          .filter(tab => {
-            const url = tab.url || "";
-            return url.includes("youtube.com/watch") ||
-                   url.includes("youtube.com/shorts") ||
-                   url.includes("youtube.com/live") ||
-                   url.includes("youtube.com/embed") ||
-                   url.includes("youtu.be/");
-          })
-          .map(tab => ({ tabId: tab.id, url: tab.url }));
-        console.log("[YTBatch] tabs.query fallback result:", tabs.length, tabs.map(t => t.url));
-      } catch (e) {
-        console.warn("[YTBatch] tabs.query fallback failed:", e);
+    // 方式 3：tabs.query（兜底，捕获休眠/未渲染标签页）
+    try {
+      const queriedTabs = await chrome.tabs.query({});
+      for (const tab of queriedTabs) {
+        const url = tab.url || "";
+        if (url.includes("youtube.com/watch") ||
+            url.includes("youtube.com/shorts") ||
+            url.includes("youtube.com/live") ||
+            url.includes("youtube.com/embed") ||
+            url.includes("youtu.be/")) {
+          if (!allTabs.has(tab.id)) {
+            allTabs.set(tab.id, { tabId: tab.id, url: tab.url });
+          }
+        }
       }
+    } catch (e) {
+      console.warn("[YTBatch] tabs.query failed:", e);
     }
+    console.log("[YTBatch] after tabs.query:", allTabs.size);
+
+    const tabs = Array.from(allTabs.values());
 
     if (tabs.length === 0) {
       setStatus("未找到 YouTube 视频。请确认：1) 视频页已完全加载 2) 扩展已刷新 3) 刷新 YouTube 页面后重试。");

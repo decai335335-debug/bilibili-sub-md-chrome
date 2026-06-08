@@ -238,6 +238,7 @@
             url: location.href,
             trackCount: state.captionTracks.length,
             tracks: state.captionTracks.map(t => ({
+              baseUrl: t.baseUrl,
               name: t.name,
               languageCode: t.languageCode,
               kind: t.kind,
