@@ -172,6 +172,11 @@ async function scanTabs() {
 
     setStatus(`扫描完成，共 ${state.videos.length} 个视频，${state.videos.filter(v => v.trackCount > 0).length} 个有字幕。`);
     renderVideoList();
+
+    // 自动选择最佳字幕（用户要求扫描后自动选择，不要空白）
+    if (state.videos.length > 0) {
+      autoSelectTracks();
+    }
   } catch (error) {
     setStatus(`扫描失败：${getErrorMessage(error)}`);
     console.error("[YTBatch] scan error", error);

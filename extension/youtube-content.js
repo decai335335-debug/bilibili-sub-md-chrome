@@ -179,17 +179,27 @@
       // 提取字幕轨道
       const captionData = ytp.captions?.playerCaptionsTracklistRenderer;
       if (captionData) {
-        state.captionTracks = (captionData.captionTracks || []).map(t => ({
-          baseUrl: t.baseUrl || "",
-          name: t.name?.simpleText || t.name?.runs?.[0]?.text || "",
-          languageCode: t.languageCode || "",
-          kind: t.kind || "",
-          isTranslatable: t.isTranslatable || false
-        }));
+        const rawTracks = captionData.captionTracks || [];
+        state.captionTracks = rawTracks.map(t => {
+          // YouTube 有时会改字段名，兼容 baseUrl / url
+          const url = t.baseUrl || t.url || "";
+          return {
+            baseUrl: url,
+            name: t.name?.simpleText || t.name?.runs?.[0]?.text || "",
+            languageCode: t.languageCode || "",
+            kind: t.kind || "",
+            isTranslatable: t.isTranslatable || false
+          };
+        });
         state.translationLanguages = (captionData.translationLanguages || []).map(t => ({
           languageCode: t.languageCode || "",
           languageName: t.languageName?.simpleText || ""
         }));
+        // 调试：检查是否有 track 缺少 URL
+        const missingUrl = state.captionTracks.filter(t => !t.baseUrl);
+        if (missingUrl.length > 0) {
+          console.warn("[YTC] tracks missing baseUrl:", missingUrl.length, "of", state.captionTracks.length);
+        }
       } else {
         state.captionTracks = [];
         state.translationLanguages = [];
