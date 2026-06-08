@@ -57,9 +57,43 @@ async function scanTabs() {
   hideResultSummary();
 
   try {
-    const tabs = await chrome.tabs.query({ url: "https://www.youtube.com/watch*" });
+    // 调试：先查询所有标签页，看看实际有哪些 URL
+    const allTabsDebug = await chrome.tabs.query({});
+    const youtubeLikeTabs = allTabsDebug.filter(t => (t.url || "").includes("youtube.com"));
+    console.log("[YTBatch] all tabs:", allTabsDebug.map(t => t.url));
+    console.log("[YTBatch] youtube-like tabs:", youtubeLikeTabs.map(t => t.url));
+
+    // 方式 1：match pattern 匹配（* 匹配任意路径）
+    let tabs = await chrome.tabs.query({
+      url: [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*",
+        "https://youtu.be/*"
+      ]
+    });
+    console.log("[YTBatch] query match pattern result:", tabs.length, tabs.map(t => t.url));
+
+    // 方式 2：如果仍为空，用单个通配符再试
     if (tabs.length === 0) {
-      setStatus("未找到打开的 YouTube 视频标签页。");
+      tabs = await chrome.tabs.query({ url: "*://*.youtube.com/*" });
+      console.log("[YTBatch] query *://*.youtube.com/* result:", tabs.length);
+    }
+
+    // 方式 3：回退到查询所有标签页手动过滤
+    if (tabs.length === 0) {
+      const allTabs = await chrome.tabs.query({});
+      tabs = allTabs.filter(tab => {
+        const url = tab.url || "";
+        return url.includes("youtube.com/watch") ||
+               url.includes("youtube.com/shorts") ||
+               url.includes("youtube.com/live") ||
+               url.includes("youtu.be/");
+      });
+      console.log("[YTBatch] fallback filter result:", tabs.length, tabs.map(t => t.url));
+    }
+
+    if (tabs.length === 0) {
+      setStatus(`未找到打开的 YouTube 视频标签页。(调试：共 ${allTabsDebug.length} 个标签页，其中 ${youtubeLikeTabs.length} 个含 youtube.com)`);
       renderVideoList();
       return;
     }
@@ -68,6 +102,7 @@ async function scanTabs() {
     const seen = new Map();
     for (const tab of tabs) {
       const videoId = extractVideoId(tab.url);
+      console.log("[YTBatch] extract videoId from", tab.url, "=>", videoId);
       if (videoId && !seen.has(videoId)) {
         seen.set(videoId, { tabId: tab.id, url: tab.url, videoId });
       }
