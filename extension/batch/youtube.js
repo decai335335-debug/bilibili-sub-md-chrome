@@ -57,43 +57,48 @@ async function scanTabs() {
   hideResultSummary();
 
   try {
-    // 调试：先查询所有标签页，看看实际有哪些 URL
-    const allTabsDebug = await chrome.tabs.query({});
-    const youtubeLikeTabs = allTabsDebug.filter(t => (t.url || "").includes("youtube.com"));
-    console.log("[YTBatch] all tabs:", allTabsDebug.map(t => t.url));
-    console.log("[YTBatch] youtube-like tabs:", youtubeLikeTabs.map(t => t.url));
+    // ===== 方式 1：chrome.windows.getAll({ populate: true }) =====
+    // 这个 API 会返回所有窗口及其标签页的完整信息，包括 URL
+    // 不受 Chrome 休眠标签页/预渲染影响，比 tabs.query 更可靠
+    let tabs = [];
+    try {
+      const windows = await chrome.windows.getAll({ populate: true });
+      const allTabsFromWindows = windows.flatMap(w => w.tabs || []);
+      console.log("[YTBatch] windows.getAll tabs:", allTabsFromWindows.length, allTabsFromWindows.map(t => t.url));
 
-    // 方式 1：match pattern 匹配（* 匹配任意路径）
-    let tabs = await chrome.tabs.query({
-      url: [
-        "https://www.youtube.com/*",
-        "https://youtube.com/*",
-        "https://youtu.be/*"
-      ]
-    });
-    console.log("[YTBatch] query match pattern result:", tabs.length, tabs.map(t => t.url));
-
-    // 方式 2：如果仍为空，用单个通配符再试
-    if (tabs.length === 0) {
-      tabs = await chrome.tabs.query({ url: "*://*.youtube.com/*" });
-      console.log("[YTBatch] query *://*.youtube.com/* result:", tabs.length);
-    }
-
-    // 方式 3：回退到查询所有标签页手动过滤
-    if (tabs.length === 0) {
-      const allTabs = await chrome.tabs.query({});
-      tabs = allTabs.filter(tab => {
+      tabs = allTabsFromWindows.filter(tab => {
         const url = tab.url || "";
         return url.includes("youtube.com/watch") ||
                url.includes("youtube.com/shorts") ||
                url.includes("youtube.com/live") ||
+               url.includes("youtube.com/embed") ||
                url.includes("youtu.be/");
       });
-      console.log("[YTBatch] fallback filter result:", tabs.length, tabs.map(t => t.url));
+      console.log("[YTBatch] windows filter result:", tabs.length, tabs.map(t => t.url));
+    } catch (e) {
+      console.warn("[YTBatch] windows.getAll failed:", e);
+    }
+
+    // ===== 方式 2：回退到 tabs.query（备用） =====
+    if (tabs.length === 0) {
+      try {
+        const allTabs = await chrome.tabs.query({});
+        tabs = allTabs.filter(tab => {
+          const url = tab.url || "";
+          return url.includes("youtube.com/watch") ||
+                 url.includes("youtube.com/shorts") ||
+                 url.includes("youtube.com/live") ||
+                 url.includes("youtube.com/embed") ||
+                 url.includes("youtu.be/");
+        });
+        console.log("[YTBatch] tabs.query fallback result:", tabs.length, tabs.map(t => t.url));
+      } catch (e) {
+        console.warn("[YTBatch] tabs.query fallback failed:", e);
+      }
     }
 
     if (tabs.length === 0) {
-      setStatus(`未找到打开的 YouTube 视频标签页。(调试：共 ${allTabsDebug.length} 个标签页，其中 ${youtubeLikeTabs.length} 个含 youtube.com)`);
+      setStatus("未找到打开的 YouTube 视频标签页。请确认视频页已完全加载，然后重新扫描。");
       renderVideoList();
       return;
     }
