@@ -269,9 +269,13 @@
   /* ---------- 字幕获取（完全模仿 youtube-transcript-api） ---------- */
   async function fetchSubtitleContent(url) {
     console.log("[YTC] fetching subtitle XML:", url.slice(0, 120));
+    // 不用 credentials:include，避免发错 cookie 导致 YouTube 返回错误页
     const resp = await fetch(url, {
-      credentials: "include",
-      headers: { "Accept-Language": "en-US", Accept: "*/*" }
+      headers: {
+        "Accept-Language": "en-US",
+        Accept: "*/*",
+        Referer: `https://www.youtube.com/watch?v=${state.videoId}`
+      }
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const text = await resp.text();
@@ -288,20 +292,23 @@
   function parseTranscriptXml(xmlText) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xmlText, "text/xml");
-    const nodes = doc.documentElement.childNodes;
+    // 如果根元素不是 <transcript>，说明 YouTube 返回了错误页
+    const root = doc.documentElement;
+    if (!root || root.tagName.toLowerCase() !== "transcript") {
+      console.warn("[YTC] unexpected XML root:", root?.tagName, "preview:", xmlText.slice(0, 300));
+      return [];
+    }
+    const nodes = root.childNodes;
     const body = [];
     for (const node of nodes) {
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
       const start = Number(node.getAttribute("start") || 0);
       const dur = Number(node.getAttribute("dur") || 0);
       let text = "";
-      // 收集所有文本内容（包括子元素中的文本）
       for (const child of node.childNodes) {
         text += child.textContent || "";
       }
-      // 清理 HTML 标签（如 <b>, <i>）
       text = text.replace(/<[^>]*>/g, "").trim();
-      // 解码 HTML 实体
       const textarea = document.createElement("textarea");
       textarea.innerHTML = text;
       text = textarea.value;
