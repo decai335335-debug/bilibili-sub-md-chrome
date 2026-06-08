@@ -295,19 +295,54 @@
 
   /* ---------- 字幕获取 ---------- */
   async function fetchSubtitleContent(url) {
-    const resp = await fetch(url, {
-      credentials: "include",
-      headers: { Accept: "*/*" }
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const text = await resp.text();
+    // YouTube baseUrl 默认格式不稳定，依次尝试 srv3 JSON / ttml XML / vtt
+    const formats = [
+      { fmt: "srv3", parser: "json" },
+      { fmt: "ttml", parser: "xml" },
+      { fmt: "vtt",  parser: "vtt" }
+    ];
 
-    try {
-      const json = JSON.parse(text);
-      if (json.events || json.pens) return parseSrv3Json(json);
-    } catch { /* not JSON */ }
+    for (const { fmt, parser } of formats) {
+      try {
+        const tryUrl = addFormatParam(url, fmt);
+        console.log(`[YTC] fetching subtitle, fmt=${fmt}:`, tryUrl.slice(0, 120));
+        const resp = await fetch(tryUrl, {
+          credentials: "include",
+          headers: { Accept: "*/*" }
+        });
+        if (!resp.ok) {
+          console.warn(`[YTC] fmt=${fmt} HTTP ${resp.status}`);
+          continue;
+        }
+        const text = await resp.text();
+        console.log(`[YTC] fmt=${fmt} response length=${text.length}, preview:`, text.slice(0, 300));
 
-    return parseXmlSubtitle(text);
+        let body = [];
+        if (parser === "json") {
+          try {
+            const json = JSON.parse(text);
+            if (json.events || json.pens) body = parseSrv3Json(json);
+          } catch { /* not JSON */ }
+        } else if (parser === "xml") {
+          body = parseXmlSubtitle(text);
+        } else if (parser === "vtt") {
+          body = parseVttSubtitle(text);
+        }
+
+        console.log(`[YTC] fmt=${fmt} parsed ${body.length} lines`);
+        if (body.length > 0) return body;
+      } catch (e) {
+        console.warn(`[YTC] fmt=${fmt} failed:`, getErrorMessage(e));
+      }
+    }
+
+    throw new Error("所有格式均未解析出字幕内容");
+  }
+
+  function addFormatParam(baseUrl, fmt) {
+    const url = new URL(baseUrl);
+    url.searchParams.set("fmt", fmt);
+    return url.toString();
   }
 
   function parseSrv3Json(data) {
@@ -365,6 +400,50 @@
       body.push({ from: start, to: start + dur, content });
     }
     return body;
+  }
+
+  function parseVttSubtitle(vttText) {
+    const body = [];
+    const lines = vttText.split("\n");
+    let i = 0;
+    // 跳过 WEBVTT 头和空行
+    while (i < lines.length && (lines[i].trim() === "" || lines[i].startsWith("WEBVTT") || lines[i].includes("-->"))) {
+      i++;
+    }
+    while (i < lines.length) {
+      // 跳过序号行
+      if (/^\d+$/.test(lines[i].trim())) i++;
+      if (i >= lines.length) break;
+      // 时间行: 00:00:01.000 --> 00:00:05.000
+      const timeLine = lines[i].trim();
+      const timeMatch = timeLine.match(/([\d:.]+)\s+-->\s+([\d:.]+)/);
+      if (!timeMatch) { i++; continue; }
+      const from = parseVttTime(timeMatch[1]);
+      const to = parseVttTime(timeMatch[2]);
+      i++;
+      // 收集内容行（可能多行）
+      const contentLines = [];
+      while (i < lines.length && lines[i].trim() !== "" && !lines[i].includes("-->")) {
+        contentLines.push(lines[i].trim());
+        i++;
+      }
+      const content = contentLines.join(" ").trim();
+      if (content) body.push({ from, to, content });
+      // 跳过空行
+      while (i < lines.length && lines[i].trim() === "") i++;
+    }
+    return body;
+  }
+
+  function parseVttTime(timeStr) {
+    // 00:00:01.000 或 00:01.000
+    const parts = timeStr.split(":");
+    if (parts.length === 3) {
+      return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
+    } else if (parts.length === 2) {
+      return Number(parts[0]) * 60 + Number(parts[1]);
+    }
+    return Number(timeStr) || 0;
   }
 
   function addTranslationParam(baseUrl, lang) {
