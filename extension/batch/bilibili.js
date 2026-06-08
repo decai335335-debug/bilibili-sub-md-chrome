@@ -366,15 +366,8 @@ async function downloadOnePage(video, pageInfo, format) {
   const folder = normalizeFolder(state.settings.noteFolder || "");
   const filepath = folder ? `${folder}/${filename}` : filename;
 
-  // 保存到 Obsidian
-  const baseUrl = String(state.settings.obsidianApiBaseUrl || "").trim();
-  const apiKey = String(state.settings.obsidianApiKey || "").trim();
-
-  if (!baseUrl || !apiKey) {
-    throw new Error("请先在插件设置中配置 Obsidian Local REST API");
-  }
-
-  await writeNoteByLocalApi(baseUrl, apiKey, filepath, content);
+  // 直接下载到本地
+  await downloadToFile(filepath, content);
 }
 
 function pickPreferredTrack(tracks) {
@@ -393,8 +386,32 @@ function pickPreferredTrack(tracks) {
   return [...tracks].sort((a, b) => priority(a) - priority(b))[0];
 }
 
-// ============ Obsidian API ============
+// ============ 文件下载 ============
 
+function downloadToFile(filepath, content) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    chrome.downloads.download({
+      url: url,
+      filename: filepath,
+      saveAs: false
+    }, (downloadId) => {
+      URL.revokeObjectURL(url);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (downloadId === undefined) {
+        reject(new Error("下载被拒绝或失败"));
+        return;
+      }
+      resolve(downloadId);
+    });
+  });
+}
+
+// Obsidian API（保留为可选功能）
 async function writeNoteByLocalApi(baseUrl, apiKey, filepath, content) {
   const resp = await sendRuntimeMessage({
     type: "write-obsidian-note",

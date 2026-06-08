@@ -313,7 +313,7 @@ async function startDownload() {
     try {
       await downloadOneVideo(video, format);
       successCount++;
-      updateVideoStatus(video.videoId, "success", "已保存到 Obsidian");
+      updateVideoStatus(video.videoId, "success", "已下载");
     } catch (error) {
       const msg = getErrorMessage(error);
       if (msg.includes("暂无") || msg.includes("没有") || msg.includes("空") || msg.includes("禁用")) {
@@ -385,19 +385,36 @@ async function downloadOneVideo(video, format) {
   const folder = normalizeFolder(state.settings.noteFolder || "Clippings/YouTube");
   const filepath = folder ? `${folder}/${filename}` : filename;
 
-  // 保存到 Obsidian
-  const baseUrl = String(state.settings.obsidianApiBaseUrl || "").trim();
-  const apiKey = String(state.settings.obsidianApiKey || "").trim();
-
-  if (!baseUrl || !apiKey) {
-    throw new Error("请先在插件设置中配置 Obsidian Local REST API");
-  }
-
-  await writeNoteByLocalApi(baseUrl, apiKey, filepath, content);
+  // 直接下载到本地（不再强制要求 Obsidian API）
+  await downloadToFile(filepath, content);
 }
 
-// ============ Obsidian API ============
+// ============ 文件下载 ============
 
+function downloadToFile(filepath, content) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    chrome.downloads.download({
+      url: url,
+      filename: filepath,
+      saveAs: false
+    }, (downloadId) => {
+      URL.revokeObjectURL(url);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (downloadId === undefined) {
+        reject(new Error("下载被拒绝或失败"));
+        return;
+      }
+      resolve(downloadId);
+    });
+  });
+}
+
+// Obsidian API（保留为可选功能）
 async function writeNoteByLocalApi(baseUrl, apiKey, filepath, content) {
   const resp = await sendRuntimeMessage({
     type: "write-obsidian-note",
