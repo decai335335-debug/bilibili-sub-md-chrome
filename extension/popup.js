@@ -30,6 +30,11 @@ init().catch((error) => {
 
 async function init() {
   bindEvents();
+  const tab = await getActiveTab();
+  if (isYouTubePage(tab?.url || "")) {
+    await initYouTubeMode(tab);
+    return;
+  }
   await refreshFromTab();
 }
 
@@ -220,14 +225,20 @@ async function getActiveTabId() {
 async function sendToContent(message) {
   const tab = await getActiveTab();
   const tabId = tab?.id || null;
+  const url = tab?.url || "";
   if (!tabId) {
     throw new Error("找不到当前标签页");
+  }
+
+  // YouTube 页面不支持 Bilibili 的 popup 消息
+  if (isYouTubePage(url)) {
+    return { ok: false, error: "YouTube 视频请使用批量下载模式" };
   }
 
   try {
     return await sendMessageToTab(tabId, message);
   } catch (error) {
-    if (shouldRetryAfterInjection(error) && isSupportedSubtitlePage(tab?.url || "")) {
+    if (shouldRetryAfterInjection(error) && isBilibiliPage(url)) {
       try {
         await ensureContentScriptReady(tabId);
         await sleep(80);
@@ -258,6 +269,10 @@ function shouldRetryAfterInjection(error) {
 }
 
 function isSupportedSubtitlePage(url) {
+  return isBilibiliPage(url) || isYouTubePage(url);
+}
+
+function isBilibiliPage(url) {
   try {
     const parsed = new URL(String(url || ""));
     if (parsed.hostname !== "www.bilibili.com") {
@@ -268,6 +283,78 @@ function isSupportedSubtitlePage(url) {
       parsed.pathname.startsWith("/video/");
   } catch {
     return false;
+  }
+}
+
+function isYouTubePage(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    return parsed.hostname === "www.youtube.com" ||
+      parsed.hostname === "youtube.com" ||
+      parsed.hostname === "youtu.be";
+  } catch {
+    return false;
+  }
+}
+
+async function initYouTubeMode(tab) {
+  setStatus("检测到 YouTube 视频页");
+  setMessage("YouTube 视频请使用批量下载模式，或点击下方按钮直接跳转。");
+
+  // 尝试注入 YouTube content script 并获取基本信息
+  try {
+    await ensureYouTubeContentScriptReady(tab.id);
+    await sleep(200);
+    const resp = await sendMessageToTab(tab.id, { type: "ytc-get-info" });
+    if (resp?.ok && resp.data) {
+      const data = resp.data;
+      setText(el.propTitle, data.title || "-");
+      setText(el.propUrl, tab.url || "-");
+      setText(el.propCreated, formatLocalDate());
+      setText(el.propTags, "youtube");
+      el.propTitle.title = data.title || "";
+      el.propUrl.title = tab.url || "";
+
+      el.subtitleSelect.innerHTML = data.tracks.length > 0
+        ? data.tracks.map((t, i) => `<option value="${i}">${escapeHtml(t.name || t.languageCode)}${t.kind === "asr" ? " [AI]" : ""}</option>`).join("")
+        : '<option value="">暂无字幕</option>';
+      el.subtitleSelect.disabled = data.tracks.length === 0;
+
+      setStatus(`YouTube 视频 — ${data.trackCount} 个字幕轨道`);
+    } else {
+      setText(el.propTitle, "YouTube 视频");
+      setText(el.propUrl, tab.url || "-");
+    }
+  } catch (e) {
+    console.warn("[Popup] YouTube init failed", e);
+    setText(el.propTitle, "YouTube 视频");
+    setText(el.propUrl, tab.url || "-");
+  }
+
+  // 禁用 Bilibili 专用按钮
+  el.refreshBtn.disabled = true;
+  el.copyBtn.disabled = true;
+  el.downloadBtn.disabled = true;
+  el.preview.value = "";
+
+  // 修改发送按钮为跳转批量下载
+  el.sendBtn.textContent = "打开 YouTube 批量下载";
+  el.sendBtn.onclick = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("batch/youtube.html") });
+  };
+}
+
+async function ensureYouTubeContentScriptReady(tabId) {
+  if (!chrome.scripting) {
+    throw new Error("不支持的内容脚本注入");
+  }
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["youtube-content.js"]
+    });
+  } catch (error) {
+    console.log("[Popup] YouTube content script injection result", error?.message || "ok");
   }
 }
 
